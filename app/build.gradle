@@ -14,9 +14,9 @@ android {
         applicationId "kultalaaki.vpkapuri"
         minSdk 26
         targetSdk 34
-        versionCode 152
+        versionCode 153
         multiDexEnabled true
-        versionName "3.9.52-Asema51beta"
+        versionName "3.9.53-Asema51beta"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 

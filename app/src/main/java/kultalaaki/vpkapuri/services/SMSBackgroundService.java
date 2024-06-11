@@ -38,9 +38,10 @@ import kultalaaki.vpkapuri.dbresponder.ResponderRepository;
 import kultalaaki.vpkapuri.soundcontrols.AlarmMediaPlayer;
 import kultalaaki.vpkapuri.soundcontrols.VibrateController;
 import kultalaaki.vpkapuri.util.Constants;
+import kultalaaki.vpkapuri.util.FirebaseEventLogger;
 import kultalaaki.vpkapuri.util.FormatNumber;
 import kultalaaki.vpkapuri.util.MyNotifications;
-
+import com.google.firebase.crashlytics.FirebaseCrashlytics;
 /**
  * Background service handles incoming messages
  */
@@ -53,6 +54,8 @@ public class SMSBackgroundService extends Service {
     SMSMessage message;
     PowerManager.WakeLock wakelock;
 
+    private FirebaseEventLogger firebaseEventLogger;
+
     public SMSBackgroundService() {
     }
 
@@ -64,6 +67,8 @@ public class SMSBackgroundService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+
+        firebaseEventLogger = new FirebaseEventLogger(this);
         // Set first notfication to make sure service doesn't throw exception
         notificationAlarmMessage("VPK Apuri", "Taustapalvelu tarkistaa onko viesti hälytys.");
     }
@@ -76,67 +81,77 @@ public class SMSBackgroundService extends Service {
      * @return Service.START_STICKY
      */
     public int onStartCommand(Intent intent, int flags, final int startId) {
-        // Kill process if intent is null
-        checkIntent(intent);
+        try {
+            // Kill process if intent is null
+            checkIntent(intent);
+            firebaseEventLogger.logEvent("CHECK_INTENT_COMPLETED", "Intent check completed");
 
-        // Acquire wakelock to ensure that android doesn't kill this process
-        acquireWakelock();
+            // Acquire wakelock to ensure that android doesn't kill this process
+            acquireWakelock();
+            firebaseEventLogger.logEvent("WAKELOCK_ACQUIRED", "Wakelock acquired");
 
-        // Create SMSMessage object from intent
-        formMessage(intent);
+            // Create SMSMessage object from intent
+            formMessage(intent);
 
-        // Check starting id of this service and set timer to stop this service
-        startIDChecker(startId);
+            // Check starting id of this service and set timer to stop this service
+            startIDChecker(startId);
 
-        // Message senderID comes from PhoneNumberDetector.java
-        switch (message.getSenderID()) {
-            case 0:
-                // Not important message to this app,
-                // let it go, let it go
-                // Can't hold it back anymore
-                stopForeground(true);
-                stopSelf();
-                break;
-            case 1:
-                // Create Alarm object and use formAlarm() method to create it ready.
-                RescueAlarm rescueAlarm = new RescueAlarm(this, message);
-                saveAlarm(rescueAlarm);
+            // Message senderID comes from PhoneNumberDetector.java
+            switch (message.getSenderID()) {
+                case 0:
+                    // Not important message to this app,
+                    // let it go, let it go
+                    // Can't hold it back anymore
+                    stopForeground(true);
+                    stopSelf();
+                    firebaseEventLogger.logEvent("SERVICE_STOPPED", "Service stopped due to unimportant message");
+                    break;
+                case 1:
+                    // Create Alarm object and use formAlarm() method to create it ready.
+                    RescueAlarm rescueAlarm = new RescueAlarm(this, message);
+                    saveAlarm(rescueAlarm);
 
-                startAlertActivity(rescueAlarm.getAlarmID());
+                    startAlertActivity(rescueAlarm.getAlarmID());
 
-                // Message from alarm provider. Create notification.
-                notificationAlarmMessage(rescueAlarm.getAlarmID(), rescueAlarm.getMessage());
+                    // Message from alarm provider. Create notification.
+                    notificationAlarmMessage(rescueAlarm.getAlarmID(), rescueAlarm.getMessage());
 
-                String alarmSound = rescueAlarm.getAlarmSound();
-                playAlarmSound(alarmSound);
-                break;
-            case 2:
-                // Message from person attending alarm.
-                notificationAlarmMessage("Lähtijä", "Lähtijä ilmoittautunut.");
-                createPersonComingToAlarm();
-                break;
-            case 3:
-                // It is alarm for Vapepa personnel
-                // No need to form alarm before saving
-                VapepaAlarm vapepaAlarm = new VapepaAlarm(this, message);
+                    String alarmSound = rescueAlarm.getAlarmSound();
+                    playAlarmSound(alarmSound);
+                    break;
+                case 2:
+                    // Message from person attending alarm.
+                    notificationAlarmMessage("Lähtijä", "Lähtijä ilmoittautunut.");
+                    createPersonComingToAlarm();
+                    break;
+                case 3:
+                    // It is alarm for Vapepa personnel
+                    // No need to form alarm before saving
+                    VapepaAlarm vapepaAlarm = new VapepaAlarm(this, message);
 
-                startAlertActivity("Vapepa hälytys.");
+                    startAlertActivity("Vapepa hälytys.");
 
-                // If user has set different alarm sound for vapepa alarms, then change that
-                if (preferences.getBoolean("boolean_vapepa_sound", false)) {
-                    vapepaAlarm.setAlarmSound("ringtone_vapepa");
-                }
+                    // If user has set different alarm sound for vapepa alarms, then change that
+                    if (preferences.getBoolean("boolean_vapepa_sound", false)) {
+                        vapepaAlarm.setAlarmSound("ringtone_vapepa");
+                    }
 
-                notificationAlarmMessage("Vapepa", message.getMessage());
+                    notificationAlarmMessage("Vapepa", message.getMessage());
 
-                saveAlarm(vapepaAlarm);
+                    saveAlarm(vapepaAlarm);
 
-                String vapepaAlarmSound = vapepaAlarm.getAlarmSound();
-                playAlarmSound(vapepaAlarmSound);
-                break;
+                    String vapepaAlarmSound = vapepaAlarm.getAlarmSound();
+                    playAlarmSound(vapepaAlarmSound);
+                    break;
+            }
+
+            firebaseEventLogger.logEvent("ON_START_COMMAND_COMPLETED", "onStartCommand execution completed");
+            return Service.START_STICKY;
+        } catch (Exception e) {
+            FirebaseCrashlytics.getInstance().recordException(e);
+            firebaseEventLogger.logEvent("ON_START_COMMAND_ERROR", "Error in onStartCommand: " + e.getMessage());
+            return Service.START_NOT_STICKY;
         }
-
-        return Service.START_STICKY;
     }
 
     /**
@@ -170,59 +185,73 @@ public class SMSBackgroundService extends Service {
      * ID defines what app needs to do
      */
     private void formMessage(Intent intent) {
-        // Take sms message from broadcastreceiver and make it object
-        message = new SMSMessage(intent.getStringExtra("number"),
-                intent.getStringExtra("message"),
-                intent.getStringExtra("timestamp"));
+        try {
+            // Take sms message from broadcastreceiver and make it object
+            message = new SMSMessage(intent.getStringExtra("number"),
+                    intent.getStringExtra("message"),
+                    intent.getStringExtra("timestamp"));
 
-        preferences = PreferenceManager.getDefaultSharedPreferences(this);
+            preferences = PreferenceManager.getDefaultSharedPreferences(this);
 
-        numberLists = new AlarmNumberLists(preferences);
+            numberLists = new AlarmNumberLists(preferences);
 
-        AlarmNumberDetector alarmDetector = new AlarmNumberDetector();
+            AlarmNumberDetector alarmDetector = new AlarmNumberDetector();
 
-        // Format number and assign it for sender
-        message.setSender(FormatNumber.formatFinnishNumber(message.getSender()));
-        // Set sender ID. ID is based on comparing sender number and user set numbers.
-        message.setSenderID(alarmDetector.numberID(message.getSender(), numberLists));
+            // Format number and assign it for sender
+            message.setSender(FormatNumber.formatFinnishNumber(message.getSender()));
+            // Set sender ID. ID is based on comparing sender number and user set numbers.
+            message.setSenderID(alarmDetector.numberID(message.getSender(), numberLists));
+
+            firebaseEventLogger.logEvent("MESSAGE_FORMED", "Message formed with sender: " + message.getSender());
+        } catch (Exception e) {
+            FirebaseCrashlytics.getInstance().recordException(e);
+            firebaseEventLogger.logEvent("MESSAGE_FORMATION_ERROR", "Error while forming message: " + e.getMessage());
+        }
     }
-
     /**
      * Create foreground notification. Notification text is message text.
      * Button in notification "POISTA ILMOITUS" is meant for clearing notification
      * and closing service.
      */
     public void notificationAlarmMessage(String title, String content) {
-        // This intent is responsible for opening AlarmActivity
-        Intent intentsms = new Intent(getApplicationContext(), AlarmActivity.class);
-        intentsms.setAction(Intent.ACTION_SEND);
-        intentsms.setType("text/plain");
-        intentsms.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        TaskStackBuilder stackBuilder = TaskStackBuilder.create(this);
-        stackBuilder.addNextIntentWithParentStack(intentsms);
-        PendingIntent pendingIntentWithBackStack = stackBuilder.getPendingIntent(0, PendingIntent.FLAG_IMMUTABLE);
+        try {
+            // This intent is responsible for opening AlarmActivity
+            Intent intentsms = new Intent(getApplicationContext(), AlarmActivity.class);
+            intentsms.setAction(Intent.ACTION_SEND);
+            intentsms.setType("text/plain");
+            intentsms.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            TaskStackBuilder stackBuilder = TaskStackBuilder.create(this);
+            stackBuilder.addNextIntentWithParentStack(intentsms);
+            PendingIntent pendingIntentWithBackStack = stackBuilder.getPendingIntent(0, PendingIntent.FLAG_IMMUTABLE);
 
-        // Stopping this service when "POISTA ILMOITUS" button in notification is clicked
-        // Stopping service also removes notification
-        Intent stopAlarm = new Intent(this, StopSMSBackgroundService.class);
-        PendingIntent stop = PendingIntent.getBroadcast(this, (int) System.currentTimeMillis(), stopAlarm, PendingIntent.FLAG_IMMUTABLE);
+            // Stopping this service when "POISTA ILMOITUS" button in notification is clicked
+            // Stopping service also removes notification
+            Intent stopAlarm = new Intent(this, StopSMSBackgroundService.class);
+            PendingIntent stop = PendingIntent.getBroadcast(this, (int) System.currentTimeMillis(), stopAlarm, PendingIntent.FLAG_IMMUTABLE);
 
-        // Foreground notification to show user and keeping service alive
-        NotificationCompat.Builder mBuilder = new NotificationCompat.Builder(SMSBackgroundService.this, Constants.NOTIFICATION_CHANNEL_ALARM)
-                .setSmallIcon(R.mipmap.ic_launcher)
-                .setContentTitle(title)
-                .setContentText(content)
-                .setPriority(NotificationCompat.PRIORITY_MAX)
-                .setCategory(NotificationCompat.CATEGORY_ALARM)
-                .setContentIntent(pendingIntentWithBackStack)
-                .addAction(R.mipmap.ic_launcher, "POISTA ILMOITUS", stop)
-                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                .setDeleteIntent(stop)
-                .setAutoCancel(true);
+            // Foreground notification to show user and keeping service alive
+            NotificationCompat.Builder mBuilder = new NotificationCompat.Builder(SMSBackgroundService.this, Constants.NOTIFICATION_CHANNEL_ALARM)
+                    .setSmallIcon(R.mipmap.ic_launcher)
+                    .setContentTitle(title)
+                    .setContentText(content)
+                    .setPriority(NotificationCompat.PRIORITY_MAX)
+                    .setCategory(NotificationCompat.CATEGORY_ALARM)
+                    .setContentIntent(pendingIntentWithBackStack)
+                    .addAction(R.mipmap.ic_launcher, "POISTA ILMOITUS", stop)
+                    .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                    .setDeleteIntent(stop)
+                    .setAutoCancel(true);
 
-        Notification notification = mBuilder.build();
-        mBuilder.build().flags |= Notification.FLAG_AUTO_CANCEL;
-        startForeground(Constants.ALARM_NOTIFICATION_ID, notification);
+            Notification notification = mBuilder.build();
+            mBuilder.build().flags |= Notification.FLAG_AUTO_CANCEL;
+            startForeground(Constants.ALARM_NOTIFICATION_ID, notification);
+
+            firebaseEventLogger.logEvent("NOTIFICATION_CREATED", "Notification created with title: " + title);
+            firebaseEventLogger.logEvent("SERVICE_STARTED_FOREGROUND", "Service started in foreground with notification ID: " + Constants.ALARM_NOTIFICATION_ID);
+        } catch (Exception e) {
+            FirebaseCrashlytics.getInstance().recordException(e);
+            firebaseEventLogger.logEvent("NOTIFICATION_CREATION_ERROR", "Error while creating notification: " + e.getMessage());
+        }
     }
 
     /**
@@ -234,20 +263,29 @@ public class SMSBackgroundService extends Service {
         if (previousStartId != startId) {
             try {
                 alarmMediaPlayer.stopAlarmMedia();
+                firebaseEventLogger.logEvent("ALARM_MEDIA_STOPPED", "Alarm media player stopped");
             } catch (Exception e) {
                 FirebaseCrashlytics.getInstance().log("SMSBackgroundService.java: Could not stop alarm media player." + e);
+                firebaseEventLogger.logEvent("ALARM_MEDIA_STOP_ERROR", "Error while stopping alarm media player: " + e.getMessage());
             }
             stopSelf(previousStartId);
+            firebaseEventLogger.logEvent("SERVICE_STOPPED", "Service stopped with startId: " + previousStartId);
         }
         previousStartId = startId;
     }
 
     private void startAlertActivity(String header) {
-        Intent intent = new Intent(this, AlertActivity.class);
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        intent.addFlags(Intent.FLAG_ACTIVITY_NO_HISTORY);
-        intent.putExtra("header", header);
-        startActivity(intent);
+        try {
+            Intent intent = new Intent(this, AlertActivity.class);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NO_HISTORY);
+            intent.putExtra("header", header);
+            startActivity(intent);
+            firebaseEventLogger.logEvent("ALERT_ACTIVITY_STARTED", "AlertActivity started with header: " + header);
+        } catch (Exception e) {
+            FirebaseCrashlytics.getInstance().recordException(e);
+            firebaseEventLogger.logEvent("ALERT_ACTIVITY_START_ERROR", "Error while starting AlertActivity: " + e.getMessage());
+        }
     }
 
     /**
@@ -302,10 +340,13 @@ public class SMSBackgroundService extends Service {
         ResponderRepository repository = new ResponderRepository(getApplication());
         repository.insert(responder);
 
+        firebaseEventLogger.logEvent("PERSON_CREATED", "Person created: " + name);
+
         Toast.makeText(this, name + " lähetti ilmoituksen.", Toast.LENGTH_SHORT).show();
 
         stopForeground(true);
         stopSelf();
+        firebaseEventLogger.logEvent("SERVICE_STOPPED", "Service stopped");
     }
 
     /**
@@ -324,19 +365,23 @@ public class SMSBackgroundService extends Service {
             alarmMediaPlayer = new AlarmMediaPlayer(this, preferences, uri);
             if (alarmMediaPlayer.mediaPlayer != null && alarmMediaPlayer.mediaPlayer.isPlaying()) {
                 alarmMediaPlayer.stopAlarmMedia();
+                firebaseEventLogger.logEvent("ALARM_STOPPED", "Alarm media player stopped");
             }
             if (alarmMediaPlayer.isDoNotDisturbAllowed()) {
                 alarmMediaPlayer.audioFocusRequest();
+                firebaseEventLogger.logEvent("ALARM_PLAYED", "Alarm sound played");
             } else {
                 notification.showInformationNotification("Do Not Disturb ei ole sallittu. Anna lupa sovelluksen asetuksissa.");
                 // Use vibration notification
                 VibrateController vibrateController = new VibrateController(this, preferences);
                 vibrateController.vibrateNotification();
+                firebaseEventLogger.logEvent("VIBRATION_NOTIFICATION", "Vibration notification started");
             }
         } catch (NullPointerException e) {
             FirebaseCrashlytics crashlytics = FirebaseCrashlytics.getInstance();
             crashlytics.log("NullPointerException: " + e);
             notification.showInformationNotification("Hälytysääntä ei ole valittu.");
+            firebaseEventLogger.logEvent("ALARM_SOUND_ERROR", "Error while playing alarm sound: " + e.getMessage());
         }
     }
 
@@ -350,14 +395,23 @@ public class SMSBackgroundService extends Service {
         if (wakelock != null) {
             try {
                 wakelock.release();
+                firebaseEventLogger.logEvent("WAKE_LOCK_RELEASED_ON_DESTROY", "Wake lock released on service destroy");
             } catch (Throwable th) {
-                // No Need to do anything.
+                FirebaseCrashlytics.getInstance().recordException(th);
+                firebaseEventLogger.logEvent("WAKE_LOCK_RELEASE_ERROR_ON_DESTROY", "Error while releasing wake lock on service destroy: " + th.getMessage());
             }
         }
 
         if (alarmMediaPlayer != null) {
-            alarmMediaPlayer.stopAlarmMedia();
+            try {
+                alarmMediaPlayer.stopAlarmMedia();
+                firebaseEventLogger.logEvent("MEDIA_PLAYER_STOPPED_ON_DESTROY", "Media player stopped on service destroy");
+            } catch (Exception e) {
+                FirebaseCrashlytics.getInstance().recordException(e);
+                firebaseEventLogger.logEvent("MEDIA_PLAYER_STOP_ERROR_ON_DESTROY", "Error while stopping media player on service destroy: " + e.getMessage());
+            }
         }
 
+        firebaseEventLogger.logEvent("SERVICE_DESTROYED", "SMSBackgroundService destroyed");
     }
 }

@@ -21,59 +21,75 @@ import android.util.Log;
 import com.google.firebase.crashlytics.FirebaseCrashlytics;
 
 import java.util.Date;
+import java.util.Objects;
 
 import kultalaaki.vpkapuri.services.SMSBackgroundService;
+import kultalaaki.vpkapuri.util.FirebaseEventLogger;
 
 
 public class SmsBroadcastReceiver extends BroadcastReceiver {
 
     private PowerManager.WakeLock wakeLock;
-
+    private FirebaseEventLogger firebaseEventLogger;
     public void onReceive(Context context, Intent intent) {
+        final String expectedAction = "android.provider.Telephony.SMS_RECEIVED";
+        if (Objects.equals(intent.getAction(), expectedAction)) {
+            getWakeLock(context);
+            firebaseEventLogger = new FirebaseEventLogger(context);
 
-        getWakeLock(context);
+            final Bundle bundle = intent.getExtras();
+            String message = "";
+            String senderNum = "";
+            long systemTime;
+            String formattedTime = "";
 
-        final Bundle bundle = intent.getExtras();
-        String message = "";
-        String senderNum = "";
-        long systemTime;
-        String formattedTime = "";
-
-        try {
-            if (bundle != null) {
-                Object[] pdus = (Object[]) bundle.get("pdus");
-                assert pdus != null;
-                final SmsMessage[] messages = new SmsMessage[pdus.length];
-                for (int i = 0; i < pdus.length; i++) {
-                    String format = bundle.getString("format");
-                    messages[i] = SmsMessage.createFromPdu((byte[]) pdus[i], format);
-                    Log.i("VPK Apuri", "Format is: " + format);
-                }
-                if (messages.length > 0) {
-                    StringBuilder content = new StringBuilder();
-                    for (SmsMessage sms : messages) {
-                        content.append(sms.getDisplayMessageBody());
-                        message = content.toString();
+            try {
+                if (bundle != null) {
+                    Object[] pdus = (Object[]) bundle.get("pdus");
+                    assert pdus != null;
+                    final SmsMessage[] messages = new SmsMessage[pdus.length];
+                    for (int i = 0; i < pdus.length; i++) {
+                        String format = bundle.getString("format");
+                        messages[i] = SmsMessage.createFromPdu((byte[]) pdus[i], format);
+                        Log.i("VPK Apuri", "Format is: " + format);
                     }
-                    senderNum = messages[0].getDisplayOriginatingAddress();
-                    systemTime = System.currentTimeMillis();
-                    formattedTime = (String) DateFormat.format("EEE, dd.MMM yyyy, H:mm:ss", new Date(systemTime));
+                    if (messages.length > 0) {
+                        StringBuilder content = new StringBuilder();
+                        for (SmsMessage sms : messages) {
+                            content.append(sms.getDisplayMessageBody());
+                            message = content.toString();
+                        }
+                        senderNum = messages[0].getDisplayOriginatingAddress();
+                        systemTime = System.currentTimeMillis();
+                        formattedTime = (String) DateFormat.format("EEE, dd.MMM yyyy, H:mm:ss", new Date(systemTime));
+                    }
+                    startService(context.getApplicationContext(), message, senderNum, formattedTime);
+                    firebaseEventLogger.logEvent("SMS_RECEIVED", "SMS received from: " + senderNum);
+                    releaseWakeLock();
                 }
-                startService(context.getApplicationContext(), message, senderNum, formattedTime);
-                releaseWakeLock();
+            } catch (Exception e) {
+                FirebaseCrashlytics.getInstance().recordException(e);
+                firebaseEventLogger.logEvent("SMS_RECEIVE_ERROR", "Error while receiving SMS: " + e.getMessage());
             }
-        } catch (Exception e) {
-            FirebaseCrashlytics.getInstance().recordException(e);
+        } else {
+            Log.e("SmsBroadcastReceiver", "Received unexpected intent " + intent.getAction());
+            firebaseEventLogger.logEvent("UNEXPECTED_INTENT", "Received unexpected intent: " + intent.getAction());
         }
     }
 
     private void startService(Context context, String message, String senderNumber, String formattedTime) {
-        Intent startBackgroundService = new Intent(context.getApplicationContext(), SMSBackgroundService.class);
-        startBackgroundService.putExtra("message", message);
-        startBackgroundService.putExtra("number", senderNumber);
-        startBackgroundService.putExtra("timestamp", formattedTime);
-        Log.i("TAG", "broadcastreceiver");
-        context.getApplicationContext().startForegroundService(startBackgroundService);
+        try {
+            Intent startBackgroundService = new Intent(context.getApplicationContext(), SMSBackgroundService.class);
+            startBackgroundService.putExtra("message", message);
+            startBackgroundService.putExtra("number", senderNumber);
+            startBackgroundService.putExtra("timestamp", formattedTime);
+            Log.i("TAG", "broadcastreceiver");
+            context.getApplicationContext().startForegroundService(startBackgroundService);
+            firebaseEventLogger.logEvent("SERVICE_START_SUCCESS", "Service started successfully");
+        } catch (Exception e) {
+            FirebaseCrashlytics.getInstance().recordException(e);
+            firebaseEventLogger.logEvent("SERVICE_START_ERROR", "Error while starting service: " + e.getMessage());
+        }
     }
 
     private void getWakeLock(Context context) {
@@ -81,6 +97,9 @@ public class SmsBroadcastReceiver extends BroadcastReceiver {
         if (powerManager != null) {
             wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,
                     "VPKApuri::HälytysServiceTaustalla");
+            firebaseEventLogger.logEvent("WAKE_LOCK_ACQUIRED", "Wake lock acquired");
+        } else {
+            firebaseEventLogger.logEvent("WAKE_LOCK_ACQUIRE_FAILED", "Failed to acquire wake lock");
         }
     }
 
@@ -92,11 +111,13 @@ public class SmsBroadcastReceiver extends BroadcastReceiver {
                 public void run() {
                     if (wakeLock.isHeld()) {
                         wakeLock.release();
+                        firebaseEventLogger.logEvent("WAKE_LOCK_RELEASED", "Wake lock released");
                     }
                 }
             }, 500);
         } catch (Exception e) {
-            // Wakelock already released
+            FirebaseCrashlytics.getInstance().recordException(e);
+            firebaseEventLogger.logEvent("WAKE_LOCK_RELEASE_ERROR", "Error while releasing wake lock: " + e.getMessage());
         }
     }
 }
