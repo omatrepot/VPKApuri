@@ -33,10 +33,10 @@ public class Constants {
     public static int ALARM_NOTIFICATION_ID = 264981;
     public static int NOTIFICATION_ID = 15245;
     public static int INFORMATION_NOTIFICATION_ID = 7648;
-    public static String NOTIFICATION_CHANNEL_INFORMATION = "Information channel";
-    public static String NOTIFICATION_CHANNEL_ALARM = "HÄLYTYS";
-    public static String NOTIFICATION_CHANNEL_SILENCE = "HILJENNYS";
-    public static String NOTIFICATION_CHANNEL_SERVICE = "ACTIVE SERVICE";
+    public static String NOTIFICATION_CHANNEL_INFORMATION = "SOVELLUSILMOITUKSET";
+    public static String NOTIFICATION_CHANNEL_ALARM = "HÄLYTYSILMOITUKSET";
+    public static String NOTIFICATION_CHANNEL_SILENCE = "HILJENNYSILMOITUKSET";
+    public static String NOTIFICATION_CHANNEL_SERVICE = "PALVELUILMOITUKSET";
 
     /**
      * Text to speech

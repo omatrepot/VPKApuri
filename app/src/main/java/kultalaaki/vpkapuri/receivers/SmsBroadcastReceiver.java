@@ -63,7 +63,7 @@ public class SmsBroadcastReceiver extends BroadcastReceiver {
                 releaseWakeLock();
             }
         } catch (Exception e) {
-            FirebaseCrashlytics.getInstance().log("Could not read sms message: " + e);
+            FirebaseCrashlytics.getInstance().recordException(e);
         }
     }
 

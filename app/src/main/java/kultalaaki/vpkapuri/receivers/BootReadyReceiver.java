@@ -15,6 +15,8 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
 
+import com.google.firebase.crashlytics.FirebaseCrashlytics;
+
 import java.util.Calendar;
 
 import kultalaaki.vpkapuri.misc.DBTimer;
@@ -43,9 +45,15 @@ public class BootReadyReceiver extends BroadcastReceiver {
                     String key = cursor.getString(cursor.getColumnIndexOrThrow(DBTimer.COL_1));
                     String startTime = cursor.getString(cursor.getColumnIndexOrThrow(DBTimer.STARTTIME));
                     String stopTime = cursor.getString(cursor.getColumnIndexOrThrow(DBTimer.STOPTIME));
-                    setAlarms(key, startTime, stopTime, context);
+                    try {
+                        setAlarms(key, startTime, stopTime, context);
+                    } catch (NumberFormatException e) {
+                        // Handle the exception
+                        FirebaseCrashlytics.getInstance().recordException(e);
+                    }
                     cursor.moveToNext();
                 }
+                cursor.close(); // Close the cursor
             }
         }
     }

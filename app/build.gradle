@@ -3,6 +3,7 @@ plugins {
     alias(libs.plugins.google.services)
     alias(libs.plugins.google.firebase.crashlytics)
     alias(libs.plugins.google.firebase.firebase.perf)
+    alias(libs.plugins.google.firebase.appdistribution)
 }
 
 android {
@@ -13,18 +14,32 @@ android {
         applicationId "kultalaaki.vpkapuri"
         minSdk 26
         targetSdk 34
-        versionCode 111
-        versionName "3.9.51"
-
+        versionCode 152
+        multiDexEnabled true
+        versionName "3.9.52-Asema51beta"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
+
+
 
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            firebaseAppDistribution {
+                releaseNotesFile="/path/to/releasenotes.txt"
+                testers="timo.elovaara@gmail.com"
+            }
         }
     }
+
+    firebaseAppDistribution {
+        appId = "1:1234567890:android:0a1b2c3d4e5f67890"
+        serviceCredentialsFile = "/path/to/serviceAccount.json"
+        releaseNotesFile = "/path/to/releaseNotes.txt"
+        groups = "testers"
+    }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
@@ -44,6 +59,8 @@ dependencies {
     androidTestImplementation libs.ext.junit
     androidTestImplementation libs.espresso.core
     annotationProcessor libs.room.compiler
-    implementation(libs.androidx.lifecycle.livedata.ktx)
-    implementation(libs.androidx.lifecycle.viewmodel.ktx)
+    implementation libs.androidx.lifecycle.livedata.ktx
+    implementation libs.androidx.lifecycle.viewmodel.ktx
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.analytics)
 }

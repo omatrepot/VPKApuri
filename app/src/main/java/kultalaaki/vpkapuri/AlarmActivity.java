@@ -31,6 +31,8 @@ import androidx.core.content.FileProvider;
 import androidx.fragment.app.FragmentManager;
 import androidx.fragment.app.FragmentTransaction;
 
+import com.google.firebase.crashlytics.FirebaseCrashlytics;
+
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -253,7 +255,8 @@ public class AlarmActivity extends AppCompatActivity
                 photoFile = createImageFile();
             } catch (IOException ex) {
                 // Error occurred while creating the File
-                Log.e("Camera", "Error occurred while creating the File");
+                //Log.e("Camera", "Error occurred while creating the File");
+                FirebaseCrashlytics.getInstance().recordException(ex);
             }
             // Continue only if the File was successfully created
             if (photoFile != null) {

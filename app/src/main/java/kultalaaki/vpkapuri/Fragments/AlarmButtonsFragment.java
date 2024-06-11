@@ -9,7 +9,10 @@ package kultalaaki.vpkapuri.Fragments;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
+import android.app.ActivityManager;
 import android.app.AlertDialog;
+import android.content.ActivityNotFoundException;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
@@ -269,7 +272,7 @@ public class AlarmButtonsFragment extends Fragment {
                 if (smsnumero != null && smsnumero.equals("whatsapp")) {
                     sendTextToWhatsapp(fivemintxt);
                 } else if (smsnumero != null && smsnumero.contains("merlotact")) {
-                    OpenMerlotAct();
+                    openMerlotAct();
                 } else if (smsnumero != null && smsnumero.contains("www")) {
                     mCallback.avaaWebSivu(smsnumero);
                 } else if (smsnumero != null && smsnumero.equals("valitse")) {
@@ -358,15 +361,25 @@ public class AlarmButtonsFragment extends Fragment {
     }
 
 
-    private void OpenMerlotAct() {
-        Intent merlotactIntent = requireActivity().getPackageManager().getLaunchIntentForPackage("com.cgi.merlotact");
-        if (merlotactIntent != null) {
-            // MerlotAct app is installed, start the app
-            startActivity(merlotactIntent);
-        } else {
-            // MerlotAct app is not installed, show a message to the user
-            Toast.makeText(getActivity(), "MerlotAct app not installed", Toast.LENGTH_SHORT).show();
+    private void openMerlotAct() {
+        final String packageName = "com.cgi.merlotact";
+        ActivityManager activityManager = (ActivityManager) requireActivity().getSystemService(Context.ACTIVITY_SERVICE);
+        if (activityManager != null) {
+            List<ActivityManager.RunningAppProcessInfo> runningAppProcesses = activityManager.getRunningAppProcesses();
+            for (ActivityManager.RunningAppProcessInfo processInfo : runningAppProcesses) {
+                if (processInfo.processName.equals(packageName)) {
+                    // App is running, bring it to the front
+                    Intent intent = new Intent();
+                    intent.setAction(Intent.ACTION_MAIN);
+                    intent.addCategory(Intent.CATEGORY_LAUNCHER);
+                    intent.setPackage(packageName);
+                    startActivity(intent);
+                    return;
+                }
+            }
         }
+        // App is not running, show a message to the user
+        Toast.makeText(getActivity(), "MerlotAct app is not running", Toast.LENGTH_SHORT).show();
     }
 
     private void sendTextToWhatsapp(String textToSend) {
