@@ -193,17 +193,19 @@ public class AlarmMediaPlayer {
      * Abandon audio focus
      */
     public void stopAlarmMedia() {
-        if (mediaPlayer.isPlaying()) {
+        if (mediaPlayer != null && mediaPlayer.isPlaying()) {
             mediaPlayer.pause();
         }
         stopVibration();
-        if (audioManager.isVolumeFixed()) {
+        if (audioManager != null && audioManager.isVolumeFixed()) {
             mediaPlayer.setVolume(0.0F, 0.0F);
-        } else {
+        } else if (audioManager != null) {
             audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, streamReturnValue, 0);
         }
 
-        audioManager.abandonAudioFocusRequest(focusRequest);
+        if (audioManager != null) {
+            audioManager.abandonAudioFocusRequest(focusRequest);
+        }
     }
 
     /**

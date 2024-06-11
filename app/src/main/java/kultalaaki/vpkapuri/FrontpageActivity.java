@@ -79,6 +79,7 @@ import kultalaaki.vpkapuri.misc.SoundControls;
 import kultalaaki.vpkapuri.services.SMSBackgroundService;
 import kultalaaki.vpkapuri.util.Constants;
 import kultalaaki.vpkapuri.util.MyNotifications;
+import kultalaaki.vpkapuri.util.PermissionHandler;
 import kultalaaki.vpkapuri.versioncheck.VersionDataProcessor;
 import kultalaaki.vpkapuri.versioncheck.VersionInfo;
 
@@ -101,10 +102,10 @@ public class FrontpageActivity extends AppCompatActivity implements ActivityComp
     private VersionInfo newestVersion = null;
 
 
-    @SuppressLint("NonConstantResourceId")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
 
         preferences = PreferenceManager.getDefaultSharedPreferences(this);
         asemataulu = preferences.getBoolean("asemataulu", false);
@@ -114,6 +115,15 @@ public class FrontpageActivity extends AppCompatActivity implements ActivityComp
         fragmentManager = this.getSupportFragmentManager();
 
         setContentView(R.layout.etusivusidepanel);
+
+
+        PermissionHandler permissionHandler = new PermissionHandler(this);
+
+        if (!permissionHandler.checkPermissions()) {
+            permissionHandler.requestPermissions();
+        } else {
+            // Permission has already been granted
+        }
 
         Toolbar toolbar = findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);

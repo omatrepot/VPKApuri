@@ -25,6 +25,7 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -38,6 +39,7 @@ import androidx.lifecycle.ViewModelProvider;
 
 
 import java.util.List;
+import java.util.Objects;
 
 import kultalaaki.vpkapuri.R;
 import kultalaaki.vpkapuri.dbfirealarm.FireAlarmViewModel;
@@ -266,6 +268,8 @@ public class AlarmButtonsFragment extends Fragment {
             public void onClick(View v) {
                 if (smsnumero != null && smsnumero.equals("whatsapp")) {
                     sendTextToWhatsapp(fivemintxt);
+                } else if (smsnumero != null && smsnumero.contains("merlotact")) {
+                    OpenMerlotAct();
                 } else if (smsnumero != null && smsnumero.contains("www")) {
                     mCallback.avaaWebSivu(smsnumero);
                 } else if (smsnumero != null && smsnumero.equals("valitse")) {
@@ -316,7 +320,7 @@ public class AlarmButtonsFragment extends Fragment {
                     PackageManager packageManager = context.getPackageManager();
                     List<ResolveInfo> activities = packageManager.queryIntentActivities(mapIntent,
                             PackageManager.MATCH_DEFAULT_ONLY);
-                    if (activities.size() > 0) {
+                    if (!activities.isEmpty()) {
                         startActivity(mapIntent);
                     }
                 }
@@ -347,9 +351,21 @@ public class AlarmButtonsFragment extends Fragment {
         signalMessage.setClassName("kultalaaki.vpkapuri", "kultalaaki.vpkapuri.AlarmActivity");
         PackageManager packageManager = requireActivity().getPackageManager();
         List<ResolveInfo> activities = packageManager.queryIntentActivities(signalMessage, PackageManager.MATCH_DEFAULT_ONLY);
-        boolean isIntentSafe = activities.size() > 0;
+        boolean isIntentSafe = !activities.isEmpty();
         if (isIntentSafe) {
             startActivity(signalMessage);
+        }
+    }
+
+
+    private void OpenMerlotAct() {
+        Intent merlotactIntent = requireActivity().getPackageManager().getLaunchIntentForPackage("com.cgi.merlotact");
+        if (merlotactIntent != null) {
+            // MerlotAct app is installed, start the app
+            startActivity(merlotactIntent);
+        } else {
+            // MerlotAct app is not installed, show a message to the user
+            Toast.makeText(getActivity(), "MerlotAct app not installed", Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -359,7 +375,15 @@ public class AlarmButtonsFragment extends Fragment {
         whatsapptxt.putExtra(Intent.EXTRA_TEXT, textToSend);
         whatsapptxt.setType("text/plain");
         whatsapptxt.setPackage("com.whatsapp");
-        startActivity(whatsapptxt);
+        // Check if WhatsApp is installed
+        PackageManager packageManager = requireActivity().getPackageManager();
+        if (whatsapptxt.resolveActivity(packageManager) != null) {
+            // WhatsApp is installed, start the intent
+            startActivity(whatsapptxt);
+        } else {
+            // WhatsApp is not installed, show a message to the user
+            Toast.makeText(getActivity(), "WhatsApp not installed", Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void pyydaLuvatSms() {
